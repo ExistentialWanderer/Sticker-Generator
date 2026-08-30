@@ -2,94 +2,253 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Product Sticker Generator</title>
-    <!-- Include JSONEditor CSS and JS via CDN -->
-    <link href="https://cloudflare.com" rel="stylesheet" type="text/css">
-    <script src="https://cloudflare.com"></script>
-
+    <title>Product Label Generator</title>
     <style>
-        /* SCREEN STYLES: What you see while editing */
-        body { font-family: sans-serif; padding: 20px; background: #f0f2f5; }
-        #controls { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; }
-        #editor-holder { height: 300px; margin-bottom: 20px; }
-        
-        /* The Sticker Sheet Layout on Screen */
-        .sticker-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-        .sticker { background: white; border: 1px dashed #ccc; padding: 15px; border-radius: 4px; text-align: center; }
+        body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; line-height: 1.6; }
+        h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+        th { background-color: #f4f4f4; }
+        input[type="number"] { width: 60px; padding: 5px; }
+        .btn { 
+            display: inline-block; 
+            margin-top: 20px; 
+            padding: 10px 20px; 
+            background: #007bff; 
+            color: white; 
+            text-decoration: none; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .btn:hover { background: #0056b3; }
+        hr { margin: 30px 0; border: 0; border-top: 1px solid #ccc; }
 
-        /* 🖨️ NATIVE PRINT STYLES: What happens when you print (Ctrl+P) */
+        /* 🖨️ NATIVE PRINTING STYLING */
         @media print {
-            /* Hide the editor, buttons, and dropdowns */
-            #controls, #editor-holder, .jsoneditor-menu { display: none !important; }
+            /* Hide the controls and library forms entirely when printing */
+            h1, p, table, .btn, hr, h3, form { display: none !important; }
+            body { margin: 0; padding: 0; }
             
-            body { background: white; padding: 0; margin: 0; }
-            
-            /* Force exact dimensions for sticker sheets (e.g., A4 or Letter) */
-            @page { size: A4; margin: 0; }
-            
-            .sticker-grid { 
-                display: grid; 
-                grid-template-columns: repeat(3, 1fr); /* Adjust to match your label sheet columns */
-                gap: 0; 
-                page-break-inside: avoid;
-            }
-            .sticker { 
-                border: none; /* Hide margins/cut lines on final print */
-                width: 70mm;  /* Exact width of your physical sticker */
-                height: 40mm; /* Exact height of your physical sticker */
-                page-break-inside: avoid;
+            /* Show only the sticker grid layout when printing */
+            #sticker-print-area { display: grid !important; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+            .print-sticker { 
+                border: 1px solid #000; padding: 10px; text-align: center; 
+                width: 70mm; height: 40mm; box-sizing: border-box; page-break-inside: avoid;
             }
         }
+        /* Hide print preview area on the normal application screen */
+        #sticker-print-area { display: none; }
     </style>
 </head>
 <body>
+    <h1>Label Generator</h1>
+    <p>Enter the number of stickers needed for each product:</p>
+    
+    <!-- Changed to type="button" to prevent broken form reloads -->
+    <form id="labelForm" onsubmit="event.preventDefault();">
+        <table>
+            <thead>
+                <tr>
+                    <th>Product Name</th>
+                    <th>Batch</th>
+                    <th>Container</th>
+                    <th>Best Before</th>
+                    <th>Quantity</th>
+                </tr>
+            </thead>
+            <tbody id="product-table-body">
+                <!-- JavaScript will populate rows here dynamically -->
+            </tbody>
+        </table>
+        
+        <button type="button" onclick="addRow()" class="btn">+ Add Row</button>
+        <button type="button" onclick="generateNativePrint()" class="btn" style="background-color: #28a745;">🖨️ Generate & Print Stickers</button>
+    </form>
+    
+    <hr>
+	<h3>Add Batch</h3>
+	<form id="addBatchForm" onsubmit="addBatch(event)">
+		<select id="add_product_select" required>
+			<option value="">-- Select Product --</option>
+		</select>
+		<input type="text" id="newBatch" placeholder="New Batch Number" required>
+		<button type="submit" class="btn">Add to Library</button>
+	</form>
 
-    <div id="controls">
-        <h2>Sticker Generator & Data Editor</h2>
-        <button onclick="renderStickers()">Update & Preview Stickers</button>
-        <button onclick="window.print()">🖨️ Print Stickers</button>
-    </div>
+	<h3>Delete Old Batch</h3>
+	<form id="deleteBatchForm" onsubmit="deleteBatch(event)">
+		<select id="delete_product_select" onchange="updateDeleteDropdown(this.value)" required>
+			<option value="">-- Select Product --</option>
+		</select>
+		<select id="delete_batch_select" required>
+			<option value="">-- Select Batch --</option>
+		</select>
+		<button type="submit" class="btn" style="background-color: #ff4444; color: white;">Delete from Library</button>
+	</form>
 
-    <!-- JSON Editor Container -->
-    <div id="editor-holder"></div>
+    <!-- Hidden block that only populates and activates when user clicks Print -->
+    <div id="sticker-print-area"></div>
+    
+	<script>
+        // Default library data structure stored in user's browser memory (localStorage)
+        let defaultLibrary = {
+            "Organic Honey": { batches: ["B001", "B002"] },
+            "Lavender Soap": { batches: ["L-99", "L-100"] }
+        };
+        let defaultContainers = { "Small Jar": {}, "Large Box": {}, "Paper Wrapper": {} };
 
-    <!-- Sticker Output Grid -->
-    <div id="sticker-output" class="sticker-grid"></div>
+        // Pull saved data from browser, fallback to default structures if empty
+        let library = JSON.parse(localStorage.getItem('stickerLibrary')) || defaultLibrary;
+        let containers = JSON.parse(localStorage.getItem('stickerContainers')) || defaultContainers;
+		let rowCount = 0;
 
-    <script>
-        // Sample Product Data
-        const initialData = [
-            { id: "001", name: "Organic Honey Jar", price: "£8.50" },
-            { id: "002", name: "Lavender Soap Bar", price: "£4.00" },
-            { id: "003", name: "Beeswax Candle", price: "£6.20" }
-        ];
+        function saveLibrary() {
+            localStorage.setItem('stickerLibrary', JSON.stringify(library));
+            populateProductDropdowns();
+        }
+		
+		function updateBatches(rowId, selectedName) {
+			const batchDropdown = document.getElementById('batch_select_' + rowId);
+			if (!batchDropdown) return;
+			batchDropdown.innerHTML = '';
 
-        // Initialize JSONEditor
-        const container = document.getElementById("editor-holder");
-        const options = { mode: 'tree' };
-        const editor = new JSONEditor(container, options);
-        editor.set(initialData);
+			if (selectedName && library[selectedName]) {
+				const batches = library[selectedName].batches;
+				batches.forEach(b => {
+					const opt = document.createElement('option');
+					opt.value = b; opt.textContent = b;
+					batchDropdown.appendChild(opt);
+				});
+			} else {
+				const opt = document.createElement('option');
+				opt.textContent = "Select product first";
+				batchDropdown.appendChild(opt);
+			}
+		}
+		
+		function addRow() {
+			rowCount++;
+			const tbody = document.getElementById('product-table-body');
+			const row = document.createElement('tr');
+            row.id = `row_${rowCount}`;
+			
+			row.innerHTML = `
+				<td>
+					<select name="productName" class="prod-select" onchange="updateBatches('${rowCount}', this.value)">
+						<option value="">-- Select --</option>
+						${Object.keys(library).map(name => `<option value="${name}">${name}</option>`).join('')}
+					</select>
+				</td>
+				<td>
+					<select id="batch_select_${rowCount}" name="batch">
+						<option value="">Select product first</option>
+					</select>
+				</td>
+				<td>
+					<select name="container">
+						${Object.keys(containers).map(c => `<option value="${c}">${c}</option>`).join('')}
+					</select>
+				</td>
+				<td><input type="date" name="bbDate"></td>
+				<td><input type="number" name="qty" value="0" min="0"></td>
+			`;
+			tbody.appendChild(row);
+		}
 
-        // Function to take JSON data and draw the stickers natively
-        function renderStickers() {
-            const products = editor.get();
-            const output = document.getElementById("sticker-output");
-            output.innerHTML = ""; // Clear old stickers
-
-            products.forEach(product => {
-                const sticker = document.createElement("div");
-                sticker.className = "sticker";
-                sticker.innerHTML = `
-                    <h3>${product.name}</h3>
-                    <p style="color: #555;">ID: ${product.id}</p>
-                    <strong style="font-size: 1.2em;">${product.price}</strong>
-                `;
-                output.appendChild(sticker);
-            });
+        // Manage Dropdowns for the Add/Delete management forms
+        function populateProductDropdowns() {
+            const addSelect = document.getElementById('add_product_select');
+            const deleteSelect = document.getElementById('delete_product_select');
+            
+            const optionsHtml = '<option value="">-- Select Product --</option>' + 
+                Object.keys(library).map(name => `<option value="${name}">${name}</option>`).join('');
+                
+            addSelect.innerHTML = optionsHtml;
+            deleteSelect.innerHTML = optionsHtml;
         }
 
-        // Run on initial load
-        renderStickers();
-    </script>
-</body>
-</html>
+		function updateDeleteDropdown(productName) {
+			const deleteSelect = document.getElementById('delete_batch_select');
+			deleteSelect.innerHTML = '<option value="">-- Select Batch --</option>';
+			
+			if (productName && library[productName]) {
+				library[productName].batches.forEach(b => {
+					const opt = document.createElement('option');
+					opt.value = b; opt.textContent = b;
+					deleteSelect.appendChild(opt);
+				});
+			}
+		}
+
+        function addBatch(e) {
+            e.preventDefault();
+            const product = document.getElementById('add_product_select').value;
+            const batchNum = document.getElementById('newBatch').value.trim();
+            
+            if (product && batchNum && !library[product].batches.includes(batchNum)) {
+                library[product].batches.push(batchNum);
+                saveLibrary();
+                document.getElementById('newBatch').value = '';
+                alert(`Added batch ${batchNum} to ${product}`);
+            }
+        }
+
+        function deleteBatch(e) {
+            e.preventDefault();
+            const product = document.getElementById('delete_product_select').value;
+            const batchToDelete = document.getElementById('delete_batch_select').value;
+            
+            if (confirm('Are you sure you want to delete this batch?')) {
+                library[product].batches = library[product].batches.filter(b => b !== batchToDelete);
+                saveLibrary();
+                updateDeleteDropdown(product);
+                alert('Batch removed successfully.');
+            }
+        }
+
+        // Generates structural HTML elements for stickers dynamically, then fires browser print
+        function generateNativePrint() {
+            const printArea = document.getElementById('sticker-print-area');
+            printArea.innerHTML = ''; // Clear layout reset
+            
+            const rows = document.querySelectorAll('#product-table-body tr');
+            let totalStickersGenerated = 0;
+
+            rows.forEach(row => {
+                const productName = row.querySelector('select[name="productName"]').value;
+                const batch = row.querySelector('select[name="batch"]').value;
+                const container = row.querySelector('select[name="container"]').value;
+                const bbDate = row.querySelector('input[name="bbDate"]').value;
+                const qty = parseInt(row.querySelector('input[name="qty"]').value) || 0;
+
+                if (!productName || qty <= 0) return;
+
+                // Loop for exact quantities needed
+                for(let i = 0; i < qty; i++) {
+                    totalStickersGenerated++;
+                    const sticker = document.createElement('div');
+                    sticker.className = 'print-sticker';
+                    sticker.innerHTML = `
+                        <h4 style="margin:2px 0;">${productName}</h4>
+                        <p style="margin:2px 0; font-size:12px;">Batch: ${batch}</p>
+                        <p style="margin:2px 0; font-size:12px;">Packaging: ${container}</p>
+                        <p style="margin:2px 0; font-size:12px;">Best Before: ${bbDate}</p>
+                    `;
+                    printArea.appendChild(sticker);
+                }
+            });
+
+            if (totalStickersGenerated > 0) {
+                            window.print(); // Triggers native browser print configuration modal (Ctrl + P)
+            } else {
+                alert('Please select a product and enter a quantity greater than 0.');
+            }
+        }
+    
+    window.addEventListener('DOMContentLoaded', () => {
+        populateProductDropdowns();
+        addRow(); // Start with one row ready
+    });
+
