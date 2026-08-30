@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Product Sticker Generator</title>
+    <!-- Include JSONEditor CSS and JS via CDN -->
+    <link href="https://cloudflare.com" rel="stylesheet" type="text/css">
+    <script src="https://cloudflare.com"></script>
+
+    <style>
+        /* SCREEN STYLES: What you see while editing */
+        body { font-family: sans-serif; padding: 20px; background: #f0f2f5; }
+        #controls { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; }
+        #editor-holder { height: 300px; margin-bottom: 20px; }
+        
+        /* The Sticker Sheet Layout on Screen */
+        .sticker-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .sticker { background: white; border: 1px dashed #ccc; padding: 15px; border-radius: 4px; text-align: center; }
+
+        /* 🖨️ NATIVE PRINT STYLES: What happens when you print (Ctrl+P) */
+        @media print {
+            /* Hide the editor, buttons, and dropdowns */
+            #controls, #editor-holder, .jsoneditor-menu { display: none !important; }
+            
+            body { background: white; padding: 0; margin: 0; }
+            
+            /* Force exact dimensions for sticker sheets (e.g., A4 or Letter) */
+            @page { size: A4; margin: 0; }
+            
+            .sticker-grid { 
+                display: grid; 
+                grid-template-columns: repeat(3, 1fr); /* Adjust to match your label sheet columns */
+                gap: 0; 
+                page-break-inside: avoid;
+            }
+            .sticker { 
+                border: none; /* Hide margins/cut lines on final print */
+                width: 70mm;  /* Exact width of your physical sticker */
+                height: 40mm; /* Exact height of your physical sticker */
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <h2>Sticker Generator & Data Editor</h2>
+        <button onclick="renderStickers()">Update & Preview Stickers</button>
+        <button onclick="window.print()">🖨️ Print Stickers</button>
+    </div>
+
+    <!-- JSON Editor Container -->
+    <div id="editor-holder"></div>
+
+    <!-- Sticker Output Grid -->
+    <div id="sticker-output" class="sticker-grid"></div>
+
+    <script>
+        // Sample Product Data
+        const initialData = [
+            { id: "001", name: "Organic Honey Jar", price: "£8.50" },
+            { id: "002", name: "Lavender Soap Bar", price: "£4.00" },
+            { id: "003", name: "Beeswax Candle", price: "£6.20" }
+        ];
+
+        // Initialize JSONEditor
+        const container = document.getElementById("editor-holder");
+        const options = { mode: 'tree' };
+        const editor = new JSONEditor(container, options);
+        editor.set(initialData);
+
+        // Function to take JSON data and draw the stickers natively
+        function renderStickers() {
+            const products = editor.get();
+            const output = document.getElementById("sticker-output");
+            output.innerHTML = ""; // Clear old stickers
+
+            products.forEach(product => {
+                const sticker = document.createElement("div");
+                sticker.className = "sticker";
+                sticker.innerHTML = `
+                    <h3>${product.name}</h3>
+                    <p style="color: #555;">ID: ${product.id}</p>
+                    <strong style="font-size: 1.2em;">${product.price}</strong>
+                `;
+                output.appendChild(sticker);
+            });
+        }
+
+        // Run on initial load
+        renderStickers();
+    </script>
+</body>
+</html>
